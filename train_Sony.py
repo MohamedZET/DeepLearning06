@@ -42,6 +42,12 @@ def upsample_and_concat(x1, x2, output_channels, in_channels):
 
     return deconv
 
+def upsample(x1, x2, output_channels, in_channels):
+    pool_size = 2
+    deconv_filter = tf.Variable(tf.compat.v1.truncated_normal([pool_size, pool_size, output_channels, in_channels], stddev=0.02))
+    deconv = tf.nn.conv2d_transpose(x1, deconv_filter, tf.shape(x2), strides=[1, pool_size, pool_size, 1])
+    return deconv
+
 # def up_sampling(pool, ind, output_shape, batch_size, name=None):
 #     """
 #         Unpooling layer after max_pool_with_argmax.
@@ -127,7 +133,6 @@ def upsample_and_concat(x1, x2, output_channels, in_channels):
 #         name="conv_transpose",
 #     )
 #     return upsample
-import tensorflow as tf
 
 def up_sampling(input, indices, output_shape, batchsoze,scale=2):
     """
@@ -189,16 +194,11 @@ def pool__size(input_size, pool_size, stride):
 def network(input):
     # Encoding layers
     global pool5, ind5,conv5
-    input_height = 512
-    input_width = 512
-    input_batch_size = 1
-    input_channel_size = 4
-    input_shape = (input_batch_size,input_height, input_width,input_channel_size)
-    tf.print(1)
     with slim.arg_scope([slim.conv2d], padding='SAME', activation_fn=tf.nn.relu, normalizer_fn=slim.batch_norm):
         conv1 = slim.conv2d(input, 64, [3, 3], rate=1, scope='g_conv1_1')  
         conv1 = slim.conv2d(conv1, 64, [3, 3], rate=1, scope='g_conv1_2')
         pool1, ind1 = tf.nn.max_pool_with_argmax(conv1, [2, 2], strides=2, padding='VALID')
+        print(conv1.shape)
 
         
        # shape1 = tf.shape(pool1)
@@ -206,61 +206,72 @@ def network(input):
         conv2 = slim.conv2d(pool1, 128, [3, 3], rate=1, scope='g_conv2_1')
         conv2 = slim.conv2d(conv2, 128, [3, 3], rate=1, scope='g_conv2_2')
         pool2, ind2 = tf.nn.max_pool_with_argmax(conv2, [2, 2], strides=2, padding='VALID')
+        print(conv2.shape)
 
         
         conv3 = slim.conv2d(pool2, 256, [3, 3], rate=1, scope='g_conv3_1')
         conv3 = slim.conv2d(conv3, 256, [3, 3], rate=1, scope='g_conv3_2')
         conv3 = slim.conv2d(conv3, 256, [3, 3], rate=1, scope='g_conv3_3')
         pool3, ind3 = tf.nn.max_pool_with_argmax(conv3, [2, 2], strides=2, padding='VALID')
+        print(conv3.shape)
 
         
         conv4 = slim.conv2d(pool3, 512, [3, 3], rate=1, scope='g_conv4_1')
         conv4 = slim.conv2d(conv4, 512, [3, 3], rate=1, scope='g_conv4_2')
         conv4 = slim.conv2d(conv4, 512, [3, 3], rate=1, scope='g_conv4_3')
         pool4, ind4 = tf.nn.max_pool_with_argmax(conv4, [2, 2], strides=2, padding='VALID')
+        print(conv4.shape)
 
         conv5 = slim.conv2d(pool4, 512, [3, 3], rate=1, scope='g_conv5_1')
         conv5 = slim.conv2d(conv5, 512, [3, 3], rate=1, scope='g_conv5_2')
         conv5 = slim.conv2d(conv5, 512, [3, 3], rate=1, scope='g_conv5_3')
         pool5, ind5 = tf.nn.max_pool_with_argmax(conv5, [2, 2], strides=2, padding='VALID')
-
-
-
+        print(conv5.shape)
     # Decoding layers
     with slim.arg_scope([slim.conv2d_transpose], padding='SAME', activation_fn=tf.nn.relu, normalizer_fn=slim.batch_norm):    
         
-        print(conv5.shape)
-        print(ind5.shape)
-        print(pool5.shape)
         print("---======---")
-        up6 = up_sampling(pool5, ind5, conv5.shape,1)
-        print(up6.shape)
+        #up6 = upsample(pool5, conv5,conv5.shape[-1],pool5.shape[-1])
+        up6 = tf.image.resize(pool5, conv5.get_shape()[1:3], method=tf.image.ResizeMethod.NEAREST_NEIGHBOR)
         conv6 = slim.conv2d(up6, 512, [3, 3], rate=1, scope='g_conv6_1')
         conv6 = slim.conv2d(conv6, 512, [3, 3], rate=1, scope='g_conv6_2')
         conv6 = slim.conv2d(conv6, 512, [3, 3], rate=1, scope='g_conv6_3')
+        print(up6.shape,conv6.shape)
     
-    
-        up7 = up_sampling(conv6, ind4, conv4.shape, 1)
+
+        #up7 = upsample(pool4, conv6,conv6.shape[-1],pool4.shape[-1])
+        up7 = tf.image.resize(conv6, conv4.get_shape()[1:3], method=tf.image.ResizeMethod.NEAREST_NEIGHBOR)
+
         conv7 = slim.conv2d(up7, 512, [3, 3], rate=1, scope='g_conv7_1')
         conv7 = slim.conv2d(conv7, 512, [3, 3], rate=1, scope='g_conv7_2')
         conv7 = slim.conv2d(conv7, 256, [3, 3], rate=1, scope='g_conv7_3')
-    
-    
-        up8 = up_sampling(conv7, ind3,conv3.shape, 1)
-    
+        print(up7.shape,conv7.shape)
+
+        
+        #up8 = upsample(pool3, conv7,conv7.shape[-1],pool3.shape[-1])
+        up8 = tf.image.resize(conv7,conv3.get_shape()[1:3], method=tf.image.ResizeMethod.NEAREST_NEIGHBOR)
+
         conv8 = slim.conv2d(up8, 256, [3, 3], rate=1, scope='g_conv8_1')
         conv8 = slim.conv2d(conv8, 256, [3, 3], rate=1, scope='g_conv8_2')
         conv8 = slim.conv2d(conv8, 128, [3, 3], rate=1, scope='g_conv8_3')
-    
-        up9 = up_sampling(conv8, ind2, conv2.shape, 1)    
+        print(up8.shape,conv8.shape)
+
+        #up9 = upsample(pool2, conv8,conv8.shape[-1],pool2.shape[-1])
+        up9 = tf.image.resize(conv8, conv2.get_shape()[1:3], method=tf.image.ResizeMethod.NEAREST_NEIGHBOR)
+
+
         conv9 = slim.conv2d(up9, 128, [3, 3], rate=1, scope='g_conv9_1')
         conv9 = slim.conv2d(conv9, 64, [3, 3], rate=1, scope='g_conv9_2')
+        print(up9.shape,conv9.shape)
+
     
-    
-        up10 = up_sampling(conv9, ind1, conv1.shape, 1)
+        #up10 = upsample(pool1, conv9,conv9.shape[-1],pool1.shape[-1])
+        up10 = tf.image.resize(conv9,conv1.get_shape()[1:3], method=tf.image.ResizeMethod.NEAREST_NEIGHBOR)
+
+
         conv10 = slim.conv2d(up10, 64, [3, 3], rate=1, scope='g_conv10_1')
         conv10 = slim.conv2d(conv10, 64, [3, 3], rate=1, scope='g_conv10_2')
-        
+        print(up10.shape,conv10.shape)
         # Output
        # 
         output = slim.conv2d(conv10, 64, [1, 1], rate=1, activation_fn=tf.nn.softmax, scope='g_conv10_3')
@@ -268,9 +279,6 @@ def network(input):
         output = slim.conv2d(output, 3, [3, 3], rate=1, activation_fn=None, scope='g_conv11')
         output = tf.image.resize(output, size=[1024, 1024], method=tf.image.ResizeMethod.NEAREST_NEIGHBOR)
 
-
-        print(output)
-        print(conv10)
     return output
 
 def pack_raw(raw):
@@ -294,8 +302,9 @@ sess = tf.compat.v1.Session()
 tf.compat.v1.disable_eager_execution()
 in_image = tf.compat.v1.placeholder(tf.float32, [1, 512, 512, 4])
 gt_image = tf.compat.v1.placeholder(tf.float32, [1, 1024,1024, 3])
+
 out_image = network(in_image)
-#%%
+
 G_loss = tf.reduce_mean(tf.abs(out_image - gt_image))
 
 t_vars = tf.compat.v1.trainable_variables()

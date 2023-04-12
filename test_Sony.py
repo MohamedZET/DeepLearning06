@@ -8,6 +8,7 @@ import numpy as np
 import rawpy
 import glob
 from PIL import Image
+import cv2
 
 input_dir = './image_map/short/'
 gt_dir = './image_map/long/'
@@ -38,74 +39,104 @@ def upsample_and_concat(x1, x2, output_channels, in_channels):
 
     return deconv_output
 
-
 def network(input):
     # Encoding layers
-    global pool1
+    global pool5, ind5,conv5
+    input_height = 512
+    input_width = 512
+    input_batch_size = 1
+    input_channel_size = 4
+    input_shape = (input_batch_size,input_height, input_width,input_channel_size)
+    tf.print(1)
     with slim.arg_scope([slim.conv2d], padding='SAME', activation_fn=tf.nn.relu, normalizer_fn=slim.batch_norm):
-        conv1 = slim.conv2d(input, 64, [3, 3], rate=1, scope='g_conv1_1')
+        conv1 = slim.conv2d(input, 64, [3, 3], rate=1, scope='g_conv1_1')  
         conv1 = slim.conv2d(conv1, 64, [3, 3], rate=1, scope='g_conv1_2')
-        pool1 = slim.max_pool2d(conv1, [2, 2], stride=2, padding='SAME')
+        pool1, ind1 = tf.nn.max_pool_with_argmax(conv1, [2, 2], strides=2, padding='VALID')
+        print(conv1.shape)
 
+        
+       # shape1 = tf.shape(pool1)
+              
         conv2 = slim.conv2d(pool1, 128, [3, 3], rate=1, scope='g_conv2_1')
         conv2 = slim.conv2d(conv2, 128, [3, 3], rate=1, scope='g_conv2_2')
-        pool2 = slim.max_pool2d(conv2, [2, 2], stride=2, padding='SAME')
+        pool2, ind2 = tf.nn.max_pool_with_argmax(conv2, [2, 2], strides=2, padding='VALID')
+        print(conv2.shape)
 
+        
         conv3 = slim.conv2d(pool2, 256, [3, 3], rate=1, scope='g_conv3_1')
         conv3 = slim.conv2d(conv3, 256, [3, 3], rate=1, scope='g_conv3_2')
         conv3 = slim.conv2d(conv3, 256, [3, 3], rate=1, scope='g_conv3_3')
-        pool3 = slim.max_pool2d(conv3, [2, 2], stride=2, padding='SAME')
+        pool3, ind3 = tf.nn.max_pool_with_argmax(conv3, [2, 2], strides=2, padding='VALID')
+        print(conv3.shape)
 
+        
         conv4 = slim.conv2d(pool3, 512, [3, 3], rate=1, scope='g_conv4_1')
         conv4 = slim.conv2d(conv4, 512, [3, 3], rate=1, scope='g_conv4_2')
         conv4 = slim.conv2d(conv4, 512, [3, 3], rate=1, scope='g_conv4_3')
-        pool4 = slim.max_pool2d(conv4, [2, 2], stride=2, padding='SAME')
+        pool4, ind4 = tf.nn.max_pool_with_argmax(conv4, [2, 2], strides=2, padding='VALID')
+        print(conv4.shape)
 
         conv5 = slim.conv2d(pool4, 512, [3, 3], rate=1, scope='g_conv5_1')
         conv5 = slim.conv2d(conv5, 512, [3, 3], rate=1, scope='g_conv5_2')
         conv5 = slim.conv2d(conv5, 512, [3, 3], rate=1, scope='g_conv5_3')
-        pool5 = slim.max_pool2d(conv5, [2, 2], stride=2, padding='SAME')
-        
+        pool5, ind5 = tf.nn.max_pool_with_argmax(conv5, [2, 2], strides=2, padding='VALID')
+        print(conv5.shape)
+
+
+
     # Decoding layers
-    with slim.arg_scope([slim.conv2d_transpose], padding='SAME', activation_fn=tf.nn.relu, normalizer_fn=slim.batch_norm):
-        up6 = slim.conv2d_transpose(pool5, 512, [3, 3], stride=2, scope='g_up6')
-        up6 = tf.concat([up6, conv5], 3)
-    
+    with slim.arg_scope([slim.conv2d_transpose], padding='SAME', activation_fn=tf.nn.relu, normalizer_fn=slim.batch_norm):    
+        
+        print("---======---")
+        #up6 = upsample(pool5, conv5,conv5.shape[-1],pool5.shape[-1])
+        up6 = tf.image.resize(pool5, conv5.get_shape()[1:3], method=tf.image.ResizeMethod.NEAREST_NEIGHBOR)
         conv6 = slim.conv2d(up6, 512, [3, 3], rate=1, scope='g_conv6_1')
         conv6 = slim.conv2d(conv6, 512, [3, 3], rate=1, scope='g_conv6_2')
         conv6 = slim.conv2d(conv6, 512, [3, 3], rate=1, scope='g_conv6_3')
+        print(up6.shape,conv6.shape)
     
-        up7 = slim.conv2d_transpose(conv6, 512, [3, 3], stride=2, scope='g_up7')
-        up7 = tf.concat([up7, conv4], 3)
-    
+
+        #up7 = upsample(pool4, conv6,conv6.shape[-1],pool4.shape[-1])
+        up7 = tf.image.resize(conv6, conv4.get_shape()[1:3], method=tf.image.ResizeMethod.NEAREST_NEIGHBOR)
+
         conv7 = slim.conv2d(up7, 512, [3, 3], rate=1, scope='g_conv7_1')
         conv7 = slim.conv2d(conv7, 512, [3, 3], rate=1, scope='g_conv7_2')
         conv7 = slim.conv2d(conv7, 256, [3, 3], rate=1, scope='g_conv7_3')
-    
-        up8 = slim.conv2d_transpose(conv7, 256, [3, 3], stride=2, scope='g_up8')
-        up8 = tf.concat([up8, conv3], 3)
-    
+        print(up7.shape,conv7.shape)
+
+        
+        #up8 = upsample(pool3, conv7,conv7.shape[-1],pool3.shape[-1])
+        up8 = tf.image.resize(conv7,conv3.get_shape()[1:3], method=tf.image.ResizeMethod.NEAREST_NEIGHBOR)
+
         conv8 = slim.conv2d(up8, 256, [3, 3], rate=1, scope='g_conv8_1')
         conv8 = slim.conv2d(conv8, 256, [3, 3], rate=1, scope='g_conv8_2')
         conv8 = slim.conv2d(conv8, 128, [3, 3], rate=1, scope='g_conv8_3')
-    
-        up9 = slim.conv2d_transpose(conv8, 128, [3, 3], stride=2, scope='g_up9')
-        up9 = tf.concat([up9, conv2], 3)
-    
+        print(up8.shape,conv8.shape)
+
+        #up9 = upsample(pool2, conv8,conv8.shape[-1],pool2.shape[-1])
+        up9 = tf.image.resize(conv8, conv2.get_shape()[1:3], method=tf.image.ResizeMethod.NEAREST_NEIGHBOR)
+
+
         conv9 = slim.conv2d(up9, 128, [3, 3], rate=1, scope='g_conv9_1')
         conv9 = slim.conv2d(conv9, 64, [3, 3], rate=1, scope='g_conv9_2')
+        print(up9.shape,conv9.shape)
+
     
-        up10 = slim.conv2d_transpose(conv9, 64, [3, 3], stride=2, scope='g_up10')
-        up10 = tf.concat([up10, conv1], 3)
-    
+        #up10 = upsample(pool1, conv9,conv9.shape[-1],pool1.shape[-1])
+        up10 = tf.image.resize(conv9,conv1.get_shape()[1:3], method=tf.image.ResizeMethod.NEAREST_NEIGHBOR)
+
+
         conv10 = slim.conv2d(up10, 64, [3, 3], rate=1, scope='g_conv10_1')
         conv10 = slim.conv2d(conv10, 64, [3, 3], rate=1, scope='g_conv10_2')
-    
+        print(up10.shape,conv10.shape)
         # Output
-        output = slim.conv2d(conv10, 3, [1, 1], rate=1, activation_fn=tf.nn.softmax, scope='g_conv10_3')
+       # 
+        output = slim.conv2d(conv10, 64, [1, 1], rate=1, activation_fn=tf.nn.softmax, scope='g_conv10_3')
+
+        output = slim.conv2d(output, 3, [3, 3], rate=1, activation_fn=None, scope='g_conv11')
+        output = tf.image.resize(output, size=[1024, 1024], method=tf.image.ResizeMethod.NEAREST_NEIGHBOR)
 
     return output
-
 
 
 def pack_raw(raw):
@@ -127,8 +158,8 @@ def pack_raw(raw):
 
 sess = tf.compat.v1.Session()
 tf.compat.v1.disable_eager_execution()
-in_image = tf.compat.v1.placeholder(tf.float32, [None, None, None, 4])
-gt_image = tf.compat.v1.placeholder(tf.float32, [None, None, None, 3])
+in_image = tf.compat.v1.placeholder(tf.float32, [1, 512, 512, 4])
+gt_image = tf.compat.v1.placeholder(tf.float32, [1, 1024,1024, 3])
 out_image = network(in_image)
 
 saver = tf.compat.v1.train.Saver()
@@ -143,12 +174,13 @@ if not os.path.isdir(result_dir + 'final/'):
 
 for test_id in test_ids:
     # test the first image in each sequence
-    in_files = glob.glob(input_dir + '%05d_00*.ARW' % test_id)
+    in_files = glob.glob(f"{input_dir}{test_id:05d}_00*.ARW")
+    print(in_files)
     for k in range(len(in_files)):
         in_path = in_files[k]
         in_fn = os.path.basename(in_path)
         print(in_fn)
-        gt_files = glob.glob(gt_dir + '%05d_00*.ARW' % test_id)
+        gt_files = glob.glob(f"{gt_dir}{test_id:05d}_00*.ARW")
         gt_path = gt_files[0]
         gt_fn = os.path.basename(gt_path)
         in_exposure = float(in_fn[9:-5])
@@ -165,12 +197,18 @@ for test_id in test_ids:
         gt_raw = rawpy.imread(gt_path)
         im = gt_raw.postprocess(use_camera_wb=True, half_size=False, no_auto_bright=True, output_bps=16)
         gt_full = np.expand_dims(np.float32(im / 65535.0), axis=0)
-
+        gt_full = cv2.resize(gt_full[0], dsize=(1024,1024), interpolation=cv2.INTER_CUBIC)
+        gt_full= np.expand_dims(gt_full,0)
+        #gt_full= np.resize(gt_full,(1,1024,1024,3))
         input_full = np.minimum(input_full, 1.0)
+        #input_full = np.resize(input_full,(1,512,512,4))
+        input_full = cv2.resize(input_full[0], dsize=(512,512), interpolation=cv2.INTER_CUBIC)
+        input_full= np.expand_dims(input_full,0)
+        #input_full= tf.image.resize(input_full,size=[512,512])
+
 
         output = sess.run(out_image, feed_dict={in_image: input_full})
         output = np.minimum(np.maximum(output, 0), 1)
-        print(output.shape)
 
         output = output[0, :, :, :]
         gt_full = gt_full[0, :, :, :]
@@ -178,9 +216,11 @@ for test_id in test_ids:
         scale_full = scale_full * np.mean(gt_full) / np.mean(
             scale_full)  # scale the low-light image to the same mean of the groundtruth
 
+
         Image.fromarray((output*255).astype(np.uint8)).save(
-            result_dir + 'final/%5d_00_%d_out.png' % (test_id, ratio))
+            f"{result_dir}final/{test_id:05d}_00_{ratio}_out.png")
         Image.fromarray((scale_full*255).astype(np.uint8)).save(
-            result_dir + 'final/%5d_00_%d_scale.png' % (test_id, ratio))
+            f"{result_dir}final/{test_id:05d}_00_{ratio}_scale.png")
         Image.fromarray((gt_full * 255).astype(np.uint8)).save(
-            result_dir + 'final/%5d_00_%d_gt.png' % (test_id, ratio))
+            f"{result_dir}final/{test_id:05d}_00_{ratio}_gt.png")
+
