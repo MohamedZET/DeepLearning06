@@ -137,12 +137,12 @@ for folder in allfolders:
     lastepoch = np.maximum(lastepoch, int(folder[-4:]))
 
 learning_rate = 1e-4
-for epoch in range(lastepoch, 4001):
+for epoch in range(lastepoch, 1001):
     print("grap")
     if os.path.isdir(result_dir + '%04d' % epoch):
         continue
     cnt = 0
-    if epoch > 2000:
+    if epoch > 500:
         learning_rate = 1e-5
     
     for ind in np.random.permutation(len(train_ids)):
