@@ -11,16 +11,31 @@ from PIL import Image
 
 input_dir = './images_test/short/'
 gt_dir = './images_test/long/'
-checkpoint_dir = '/checkpoint_unet/Sony/'
+checkpoint_dir = './checkpoint_unet/Sony/'
 result_dir = './result_unet/'
+
+import logging
+import numpy as np
+import time
+
+# Configure logging
+logging.basicConfig(filename='UnetEpoch.log',
+                    level=logging.DEBUG,
+                    format='%(asctime)s [%(levelname)s]: %(message)s',
+                    datefmt='%Y-%m-%d %H:%M:%S')
+
+# Set up a logger
+logger = logging.getLogger('debug')
+
+
 
 # get train IDs
 train_fns = glob.glob(gt_dir + '1*.ARW')
 train_ids = [int(os.path.basename(train_fn)[0:5]) for train_fn in train_fns]
-print(train_fns)
+
 
 ps = 512  # patch size for training
-save_freq = 500
+save_freq = 50
 
 DEBUG = 0
 if DEBUG == 1:
@@ -47,7 +62,7 @@ def network(input):
     conv1 = slim.conv2d(input, 32, [3, 3], rate=1, activation_fn=lrelu, scope='g_conv1_1')
     conv1 = slim.conv2d(conv1, 32, [3, 3], rate=1, activation_fn=lrelu, scope='g_conv1_2')
     pool1 = slim.max_pool2d(conv1, [2, 2], padding='SAME')
-    print(tf.shape(pool1))
+
     conv2 = slim.conv2d(pool1, 64, [3, 3], rate=1, activation_fn=lrelu, scope='g_conv2_1')
     conv2 = slim.conv2d(conv2, 64, [3, 3], rate=1, activation_fn=lrelu, scope='g_conv2_2')
     pool2 = slim.max_pool2d(conv2, [2, 2], padding='SAME')
@@ -81,8 +96,7 @@ def network(input):
     
     conv10 = slim.conv2d(conv9, 12, [1, 1], rate=1, activation_fn=None, scope='g_conv10')
     out = tf.compat.v1.depth_to_space(conv10, 2)
-    print((conv10))
-    print((out))
+
     return out
 
 
@@ -108,7 +122,7 @@ tf.compat.v1.disable_eager_execution()
 in_image = tf.compat.v1.placeholder(tf.float32, [1, 512, 512, 4])
 gt_image = tf.compat.v1.placeholder(tf.float32, [1, 1024,1024, 3])
 out_image = network(in_image)
-#%%
+
 G_loss = tf.reduce_mean(tf.abs(out_image - gt_image))
 
 t_vars = tf.compat.v1.trainable_variables()
@@ -138,7 +152,6 @@ for folder in allfolders:
 
 learning_rate = 1e-4
 for epoch in range(lastepoch, 1001):
-    print("grap")
     if os.path.isdir(result_dir + '%04d' % epoch):
         continue
     cnt = 0
@@ -146,7 +159,6 @@ for epoch in range(lastepoch, 1001):
         learning_rate = 1e-5
     
     for ind in np.random.permutation(len(train_ids)):
-        print("sopp")
         # get the path from image id
         train_id = train_ids[ind]
         
@@ -195,13 +207,12 @@ for epoch in range(lastepoch, 1001):
             gt_patch = np.transpose(gt_patch, (0, 2, 1, 3))
 
         input_patch = np.minimum(input_patch, 1.0)
-        print(input_patch.shape)
         _, G_current, output = sess.run([G_opt, G_loss, out_image],
                                         feed_dict={in_image: input_patch, gt_image: gt_patch, lr: learning_rate})
         output = np.minimum(np.maximum(output, 0), 1)
         g_loss[ind] = G_current
 
-        print(f"{epoch} {cnt} Loss={np.mean(g_loss[np.where(g_loss)]):.3f} Time={time.time() - st:.3f}")
+        logger.debug(f"{epoch} {cnt} Loss={np.mean(g_loss[np.where(g_loss)]):.3f} Time={time.time() - st:.3f}")
 
         if epoch % save_freq == 0:
             if not os.path.isdir(f"{result_dir}{epoch:04d}"):
@@ -217,5 +228,4 @@ for epoch in range(lastepoch, 1001):
             img.save(f"{result_dir}{epoch:04d}/{train_id:05d}_00_train_{ratio:.2f}.jpg")
             saver.save(sess, checkpoint_dir + 'model.ckpt')
     
-#%%
-print(glob.glob(input_dir + '*_00*.ARW' %train_ids))
+

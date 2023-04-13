@@ -9,14 +9,15 @@ import rawpy
 import glob
 from PIL import Image
 import cv2
+import math
 
 input_dir = './image_map/short/'
 gt_dir = './image_map/long/'
-checkpoint_dir = 'checkpoint_segnet'
+checkpoint_dir = './checkpoint_segnet/Sony/'
 result_dir = './result_segnet/'
 
 # get test IDs
-test_fns = glob.glob(gt_dir + '/1*.ARW')
+test_fns = glob.glob(gt_dir + '/0*.ARW')
 test_ids = [int(os.path.basename(test_fn)[0:5]) for test_fn in test_fns]
 
 DEBUG = 0
@@ -34,20 +35,23 @@ def upsample_and_concat(x1, x2, output_channels, in_channels):
     deconv_filter = tf.Variable(tf.compat.v1.truncated_normal([pool_size, pool_size, output_channels, in_channels], stddev=0.02))
     deconv = tf.nn.conv2d_transpose(x1, deconv_filter, tf.shape(x2), strides=[1, pool_size, pool_size, 1])
 
-    deconv_output = tf.concat([deconv, x2], 3)
-    deconv_output.set_shape([None, None, None, output_channels * 2])
+    # deconv_output = tf.concat([deconv, x2], 3)
+    deconv.set_shape([None, None, None, output_channels])
 
-    return deconv_output
+    return deconv
+
+def upsample(x1, x2, output_channels, in_channels):
+    pool_size = 2
+    deconv_filter = tf.Variable(tf.compat.v1.truncated_normal([pool_size, pool_size, output_channels, in_channels], stddev=0.02))
+    deconv = tf.nn.conv2d_transpose(x1, deconv_filter, tf.shape(x2), strides=[1, pool_size, pool_size, 1])
+    return deconv
+def pool__size(input_size, pool_size, stride):
+    output_size = math.floor((input_size - pool_size) / stride) + 1
+    return output_size
 
 def network(input):
     # Encoding layers
     global pool5, ind5,conv5
-    input_height = 512
-    input_width = 512
-    input_batch_size = 1
-    input_channel_size = 4
-    input_shape = (input_batch_size,input_height, input_width,input_channel_size)
-    tf.print(1)
     with slim.arg_scope([slim.conv2d], padding='SAME', activation_fn=tf.nn.relu, normalizer_fn=slim.batch_norm):
         conv1 = slim.conv2d(input, 64, [3, 3], rate=1, scope='g_conv1_1')  
         conv1 = slim.conv2d(conv1, 64, [3, 3], rate=1, scope='g_conv1_2')
@@ -81,9 +85,6 @@ def network(input):
         conv5 = slim.conv2d(conv5, 512, [3, 3], rate=1, scope='g_conv5_3')
         pool5, ind5 = tf.nn.max_pool_with_argmax(conv5, [2, 2], strides=2, padding='VALID')
         print(conv5.shape)
-
-
-
     # Decoding layers
     with slim.arg_scope([slim.conv2d_transpose], padding='SAME', activation_fn=tf.nn.relu, normalizer_fn=slim.batch_norm):    
         

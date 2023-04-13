@@ -15,7 +15,7 @@ checkpoint_dir = './checkpoint_unet/Sony/'
 result_dir = './result_unet/'
 
 # get test IDs
-test_fns = glob.glob(gt_dir + '/0*.ARW')
+test_fns = glob.glob(gt_dir + '/1*.ARW')
 test_ids = [int(os.path.basename(test_fn)[0:5]) for test_fn in test_fns]
 
 DEBUG = 0
