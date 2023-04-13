@@ -9,10 +9,10 @@ import rawpy
 import glob
 from PIL import Image
 
-input_dir = './image_map_max/short/'
-gt_dir = './image_map_max/long/'
-checkpoint_dir = '.'
-result_dir = './result_Sony/'
+input_dir = './images_test/short/'
+gt_dir = './images_test/long/'
+checkpoint_dir = '/checkpoint_unet/Sony/'
+result_dir = './result_unet/'
 
 # get train IDs
 train_fns = glob.glob(gt_dir + '1*.ARW')
@@ -214,7 +214,7 @@ for epoch in range(lastepoch, 4001):
             temp = np.concatenate((gt_patch[0, :, :, :], output[0, :, :, :]), axis=1)
             temp = (temp * 255).clip(0, 255).astype('uint8')
             img = Image.fromarray(temp)
-            img.save(f"{result_dir}{epoch:04d}/{train_id:05d}_00_train_{ratio:d}.jpg")
+            img.save(f"{result_dir}{epoch:04d}/{train_id:05d}_00_train_{ratio:.2f}.jpg")
             saver.save(sess, checkpoint_dir + 'model.ckpt')
     
 #%%

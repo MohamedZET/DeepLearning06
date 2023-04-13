@@ -10,8 +10,8 @@ import glob
 import math
 from PIL import Image
 
-input_dir = './image_map/short/'
-gt_dir = './image_map/long/'
+input_dir = './images_test/short/'
+gt_dir = './images_test/long/'
 checkpoint_dir = './checkpoint_segnet/Sony/'
 result_dir = './result_segnet/'
 
@@ -332,7 +332,7 @@ lastepoch = 0
 for folder in allfolders:
     lastepoch = np.maximum(lastepoch, int(folder[-4:]))
 
-learning_rate = 1e-4
+learning_rate = 100e-4
 print("start")
 for epoch in range(lastepoch, 4001):
     if os.path.isdir(str(result_dir) + f'{epoch:04d}'):
@@ -410,7 +410,7 @@ for epoch in range(lastepoch, 4001):
             temp = np.concatenate((gt_patch[0, :, :, :], output[0, :, :, :]), axis=1)
             temp = (temp * 255).clip(0, 255).astype('uint8')
             img = Image.fromarray(temp)
-            img.save(f"{result_dir}{epoch:04d}/{train_id:05d}_00_train_{ratio:d}.jpg")
+            img.save(f"{result_dir}{epoch:04d}/{train_id:05d}_00_train_{ratio:.2f}.jpg")
             saver.save(sess, checkpoint_dir + 'model.ckpt')
             
 
