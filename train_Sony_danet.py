@@ -87,41 +87,38 @@ def DANet_block(inputs, out_dim, kernel_size=3, stride=1, dilation=1, padding='S
         output = tf.add(conv, spatial_wise_attention, name='output')
         return output
 
-def pool__size(input_size, pool_size, stride):
-    output_size = math.floor((input_size - pool_size) / stride) + 1
-    return output_size
+
 def network(input):
-    conv1 = DANet_block(input, 32, scope='g_conv1')
-    pool1 = slim.max_pool2d(conv1, [2, 2], padding='SAME')
+    block1 = DANet_block(input, 32, scope='g_block1')
+    pool1 = slim.max_pool2d(block1, [2, 2], padding='SAME')
 
-    conv2 = DANet_block(pool1, 64, scope='g_conv2')
-    pool2 = slim.max_pool2d(conv2, [2, 2], padding='SAME')
+    block2 = DANet_block(pool1, 64, scope='g_block2')
+    pool2 = slim.max_pool2d(block2, [2, 2], padding='SAME')
 
-    conv3 = DANet_block(pool2, 128, scope='g_conv3')
-    pool3 = slim.max_pool2d(conv3, [2, 2], padding='SAME')
+    block3 = DANet_block(pool2, 128, scope='g_block3')
+    pool3 = slim.max_pool2d(block3, [2, 2], padding='SAME')
 
-    conv4 = DANet_block(pool3, 256, scope='g_conv4')
-    pool4 = slim.max_pool2d(conv4, [2, 2], padding='SAME')
+    block4 = DANet_block(pool3, 256, scope='g_block4')
+    pool4 = slim.max_pool2d(block4, [2, 2], padding='SAME')
 
-    conv5 = DANet_block(pool4, 512, scope='g_conv5')
+    block5 = DANet_block(pool4, 512, scope='g_block5')
 
-    up6 = upsample_and_concat(conv5, conv4, 256, 512)
-    conv6 = DANet_block(up6, 256, scope='g_conv6')
+    up6 = upsample_and_concat(block5, block4, 256, 512)
+    block6 = DANet_block(up6, 256, scope='g_block6')
 
-    up7 = upsample_and_concat(conv6, conv3, 128, 256)
-    conv7 = DANet_block(up7, 128, scope='g_conv7')
+    up7 = upsample_and_concat(block6, block3, 128, 256)
+    block7 = DANet_block(up7, 128, scope='g_block7')
 
-    up8 = upsample_and_concat(conv7, conv2, 64, 128)
-    conv8 = DANet_block(up8, 64, scope='g_conv8')
+    up8 = upsample_and_concat(block7, block2, 64, 128)
+    block8 = DANet_block(up8, 64, scope='g_block8')
 
-    up9 = upsample_and_concat(conv8, conv1, 32, 64)
-    conv9 = DANet_block(up9, 32, scope='g_conv9')
+    up9 = upsample_and_concat(block8, block1, 32, 64)
+    block9 = DANet_block(up9, 32, scope='g_block9')
 
-    conv10 = slim.conv2d(conv9, 12, [1, 1], rate=1, activation_fn=None, scope='g_conv10')
-    out = tf.compat.v1.depth_to_space(conv10, 2)
+    block10 = slim.conv2d(block9, 12, [1, 1], rate=1, activation_fn=None, scope='g_block10')
+    out = tf.compat.v1.depth_to_space(block10, 2)
 
     return out
-
 
 def pack_raw(raw):
     # pack Bayer image to 4 channels
