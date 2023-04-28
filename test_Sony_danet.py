@@ -8,11 +8,13 @@ import numpy as np
 import rawpy
 import glob
 from PIL import Image
+import cv2
+import math
 
 input_dir = './Sony/short/'
 gt_dir = './Sony/long/'
-checkpoint_dir = './checkpoint_unet/Sony/'
-result_dir = './result_unet_test/'
+checkpoint_dir = './checkpoint_danet/Sony/'
+result_dir = './result_danet_test/'
 
 # get test IDs
 test_fns = glob.glob(gt_dir + '/0*.ARW')
@@ -28,6 +30,7 @@ def lrelu(x):
     return tf.maximum(x * 0.2, x)
 
 
+
 def upsample_and_concat(x1, x2, output_channels, in_channels):
     pool_size = 2
     deconv_filter = tf.Variable(tf.compat.v1.truncated_normal([pool_size, pool_size, output_channels, in_channels], stddev=0.02))
@@ -39,44 +42,61 @@ def upsample_and_concat(x1, x2, output_channels, in_channels):
     return deconv_output
 
 
+
+def DANet_block(inputs, out_dim, kernel_size=3, stride=1, dilation=1, padding='SAME', scope='DANet_block'):
+    with tf.compat.v1.variable_scope(scope):
+        # Convolution branch
+        conv = slim.conv2d(inputs, out_dim, [kernel_size, kernel_size], stride=stride, rate=dilation, padding=padding, scope='conv')
+
+        # Channel Attention
+        avg_pool = tf.reduce_mean(conv, axis=[1, 2], keepdims=True)
+        max_pool = tf.reduce_max(conv, axis=[1, 2], keepdims=True)
+        concat = tf.concat([avg_pool, max_pool], axis=-1)
+        channel_wise_attention = slim.conv2d(concat, 1, [1, 1], activation_fn=tf.nn.sigmoid, scope='channel_attention')
+        scaled_conv = tf.multiply(conv, channel_wise_attention)
+
+        # Spatial Attention
+        squeeze = slim.conv2d(scaled_conv, 1, [1, 1], activation_fn=tf.nn.sigmoid, scope='squeeze')
+        expand = slim.conv2d(squeeze, out_dim, [1, 1], activation_fn=None, scope='expand')
+        spatial_wise_attention = tf.multiply(scaled_conv, expand)
+
+        # Output
+        output = tf.add(conv, spatial_wise_attention, name='output')
+        return output
+
+def pool__size(input_size, pool_size, stride):
+    output_size = math.floor((input_size - pool_size) / stride) + 1
+    return output_size
 def network(input):
-    conv1 = slim.conv2d(input, 32, [3, 3], rate=1, activation_fn=lrelu, scope='g_conv1_1')
-    conv1 = slim.conv2d(conv1, 32, [3, 3], rate=1, activation_fn=lrelu, scope='g_conv1_2')
+    conv1 = DANet_block(input, 32, scope='g_conv1')
     pool1 = slim.max_pool2d(conv1, [2, 2], padding='SAME')
 
-    conv2 = slim.conv2d(pool1, 64, [3, 3], rate=1, activation_fn=lrelu, scope='g_conv2_1')
-    conv2 = slim.conv2d(conv2, 64, [3, 3], rate=1, activation_fn=lrelu, scope='g_conv2_2')
+    conv2 = DANet_block(pool1, 64, scope='g_conv2')
     pool2 = slim.max_pool2d(conv2, [2, 2], padding='SAME')
 
-    conv3 = slim.conv2d(pool2, 128, [3, 3], rate=1, activation_fn=lrelu, scope='g_conv3_1')
-    conv3 = slim.conv2d(conv3, 128, [3, 3], rate=1, activation_fn=lrelu, scope='g_conv3_2')
+    conv3 = DANet_block(pool2, 128, scope='g_conv3')
     pool3 = slim.max_pool2d(conv3, [2, 2], padding='SAME')
 
-    conv4 = slim.conv2d(pool3, 256, [3, 3], rate=1, activation_fn=lrelu, scope='g_conv4_1')
-    conv4 = slim.conv2d(conv4, 256, [3, 3], rate=1, activation_fn=lrelu, scope='g_conv4_2')
+    conv4 = DANet_block(pool3, 256, scope='g_conv4')
     pool4 = slim.max_pool2d(conv4, [2, 2], padding='SAME')
 
-    conv5 = slim.conv2d(pool4, 512, [3, 3], rate=1, activation_fn=lrelu, scope='g_conv5_1')
-    conv5 = slim.conv2d(conv5, 512, [3, 3], rate=1, activation_fn=lrelu, scope='g_conv5_2')
+    conv5 = DANet_block(pool4, 512, scope='g_conv5')
 
     up6 = upsample_and_concat(conv5, conv4, 256, 512)
-    conv6 = slim.conv2d(up6, 256, [3, 3], rate=1, activation_fn=lrelu, scope='g_conv6_1')
-    conv6 = slim.conv2d(conv6, 256, [3, 3], rate=1, activation_fn=lrelu, scope='g_conv6_2')
+    conv6 = DANet_block(up6, 256, scope='g_conv6')
 
     up7 = upsample_and_concat(conv6, conv3, 128, 256)
-    conv7 = slim.conv2d(up7, 128, [3, 3], rate=1, activation_fn=lrelu, scope='g_conv7_1')
-    conv7 = slim.conv2d(conv7, 128, [3, 3], rate=1, activation_fn=lrelu, scope='g_conv7_2')
+    conv7 = DANet_block(up7, 128, scope='g_conv7')
 
     up8 = upsample_and_concat(conv7, conv2, 64, 128)
-    conv8 = slim.conv2d(up8, 64, [3, 3], rate=1, activation_fn=lrelu, scope='g_conv8_1')
-    conv8 = slim.conv2d(conv8, 64, [3, 3], rate=1, activation_fn=lrelu, scope='g_conv8_2')
+    conv8 = DANet_block(up8, 64, scope='g_conv8')
 
     up9 = upsample_and_concat(conv8, conv1, 32, 64)
-    conv9 = slim.conv2d(up9, 32, [3, 3], rate=1, activation_fn=lrelu, scope='g_conv9_1')
-    conv9 = slim.conv2d(conv9, 32, [3, 3], rate=1, activation_fn=lrelu, scope='g_conv9_2')
+    conv9 = DANet_block(up9, 32, scope='g_conv9')
 
     conv10 = slim.conv2d(conv9, 12, [1, 1], rate=1, activation_fn=None, scope='g_conv10')
     out = tf.compat.v1.depth_to_space(conv10, 2)
+
     return out
 
 
@@ -99,8 +119,8 @@ def pack_raw(raw):
 
 sess = tf.compat.v1.Session()
 tf.compat.v1.disable_eager_execution()
-in_image = tf.compat.v1.placeholder(tf.float32, [None, None, None, 4])
-gt_image = tf.compat.v1.placeholder(tf.float32, [None, None, None, 3])
+in_image = tf.compat.v1.placeholder(tf.float32, [1, 512, 512, 4])
+gt_image = tf.compat.v1.placeholder(tf.float32, [1, 1024,1024, 3])
 out_image = network(in_image)
 
 saver = tf.compat.v1.train.Saver()
@@ -110,17 +130,18 @@ if ckpt:
     print('loaded ' + ckpt.model_checkpoint_path)
     saver.restore(sess, ckpt.model_checkpoint_path)
 
-if not os.path.isdir(result_dir + 'final2/'):
-    os.makedirs(result_dir + 'final2/')
+if not os.path.isdir(result_dir + 'final/'):
+    os.makedirs(result_dir + 'final/')
 
 for test_id in test_ids:
     # test the first image in each sequence
     in_files = glob.glob(f"{input_dir}{test_id:05d}_00*.ARW")
+    print(in_files)
     for k in range(len(in_files)):
         in_path = in_files[k]
         in_fn = os.path.basename(in_path)
+        print(in_fn)
         gt_files = glob.glob(f"{gt_dir}{test_id:05d}_00*.ARW")
-
         gt_path = gt_files[0]
         gt_fn = os.path.basename(gt_path)
         in_exposure = float(in_fn[9:-5])
@@ -129,7 +150,7 @@ for test_id in test_ids:
 
         raw = rawpy.imread(in_path)
         input_full = np.expand_dims(pack_raw(raw), axis=0) * ratio
-        
+
         im = raw.postprocess(use_camera_wb=True, half_size=False, no_auto_bright=True, output_bps=16)
         # scale_full = np.expand_dims(np.float32(im/65535.0),axis = 0)*ratio
         scale_full = np.expand_dims(np.float32(im / 65535.0), axis=0)
@@ -137,8 +158,16 @@ for test_id in test_ids:
         gt_raw = rawpy.imread(gt_path)
         im = gt_raw.postprocess(use_camera_wb=True, half_size=False, no_auto_bright=True, output_bps=16)
         gt_full = np.expand_dims(np.float32(im / 65535.0), axis=0)
-
+        gt_full = cv2.resize(gt_full[0], dsize=(1024,1024), interpolation=cv2.INTER_CUBIC)
+        gt_full= np.expand_dims(gt_full,0)
+        #gt_full= np.resize(gt_full,(1,1024,1024,3))
         input_full = np.minimum(input_full, 1.0)
+        #input_full = np.resize(input_full,(1,512,512,4))
+        input_full = cv2.resize(input_full[0], dsize=(512,512), interpolation=cv2.INTER_CUBIC)
+        input_full= np.expand_dims(input_full,0)
+        #input_full= tf.image.resize(input_full,size=[512,512])
+
+
         output = sess.run(out_image, feed_dict={in_image: input_full})
         output = np.minimum(np.maximum(output, 0), 1)
 
@@ -148,9 +177,10 @@ for test_id in test_ids:
         scale_full = scale_full * np.mean(gt_full) / np.mean(
             scale_full)  # scale the low-light image to the same mean of the groundtruth
 
+
         Image.fromarray((output*255).astype(np.uint8)).save(
-            f"{result_dir}final2/{test_id:05d}_00_{ratio}_out.png")
+            f"{result_dir}final/{test_id:05d}_00_{ratio}_out.png")
         Image.fromarray((scale_full*255).astype(np.uint8)).save(
-            f"{result_dir}final2/{test_id:05d}_00_{ratio}_scale.png")
+            f"{result_dir}final/{test_id:05d}_00_{ratio}_scale.png")
         Image.fromarray((gt_full * 255).astype(np.uint8)).save(
-            f"{result_dir}final2/{test_id:05d}_00_{ratio}_gt.png")
+            f"{result_dir}final/{test_id:05d}_00_{ratio}_gt.png")
